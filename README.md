@@ -53,8 +53,8 @@
 </div>
 
 <h1 style="color:#D3D3FF;">
-<details>
-<summary >Compatibility</summary>
+Compatibility
+</h1>
 <h3 style="font-size:16px;">
 
 | **Mod Name**    | **Status** | **Notes**                    |
@@ -68,6 +68,3 @@
 | ModernFix       |     ✅      | -                            |
 
 </h3>
-</details>
-</h1>
-
