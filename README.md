@@ -55,7 +55,7 @@
 <h1 style="color:#D3D3FF;">
 <details>
 <summary >Compatibility</summary>
-<div style="font-size:16px;">
+<h3 style="font-size:16px;">
 
 | **Mod Name**    | **Status** | **Notes**                    |
 |:----------------|:----------:|:-----------------------------|
@@ -67,7 +67,7 @@
 | Chloride        |     ✅      | -                            |
 | ModernFix       |     ✅      | -                            |
 
-</div>
+</h3>
 </details>
 </h1>
 
