@@ -1,0 +1,241 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+plugins {
+    id 'idea'
+    id 'java'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'org.parchmentmc.librarian.forgegradle' version '1.+'
+    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT'
+    id 'com.gradleup.shadow' version '9.1.0'
+}
+
+group = mod_group_id
+version = mod_version
+base.archivesName = mod_name
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+configurations {
+    clientSide
+    clientImplementation.extendsFrom clientSide
+    minecraftLibrary.extendsFrom clientSide
+
+    serverSide
+    serverImplementation.extendsFrom serverSide
+    minecraftLibrary.extendsFrom serverSide
+
+    compound
+
+    sharedAnnotationProcessor.extendsFrom annotationProcessor
+    clientAnnotationProcessor.extendsFrom annotationProcessor
+    serverAnnotationProcessor.extendsFrom annotationProcessor
+    compoundAnnotationProcessor.extendsFrom annotationProcessor
+}
+
+sourceSets {
+    client {
+        ext.refMap = "client.refmap.json"
+        java.srcDirs = ['src/main/client/java']
+        resources.srcDirs = ['src/main/client/resources']
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+
+    server {
+        ext.refMap = "server.refmap.json"
+        java.srcDirs = ['src/main/server/java']
+        resources.srcDirs = ['src/main/server/resources']
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        client {
+            workingDirectory project.file('run')
+            arg "-mixin.config=client.mixins.json"
+            arg "-mixin.config=shared.mixins.json"
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.client
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('runServer')
+
+            args '--nogui'
+            arg "-mixin.config=server.mixins.json"
+            arg "-mixin.config=shared.mixins.json"
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.server
+                }
+            }
+        }
+
+        test {
+            parent minecraft.runs.client
+            workingDirectory project.file('run')
+            arg "-mixin.config=client.mixins.json"
+            arg "-mixin.config=server.mixins.json"
+            arg "-mixin.config=shared.mixins.json"
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.client
+                    source sourceSets.server
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = "https://repo.spongepowered.org/repository/maven-public/" }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation 'org.spongepowered:spongeapi:10.0.0'
+
+    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.7'
+    annotationProcessor 'org.spongepowered:mixin:0.8.7:processor'
+
+    clientImplementation sourceSets.main.output
+    serverImplementation sourceSets.main.output
+
+    serverImplementation("net.luckperms:api:5.4")
+}
+
+mixin {
+    add sourceSets.main, "shared.refmap.json"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
+                             forge_version       : forge_version, forge_version_range: forge_version_range,
+                             loader_version_range: loader_version_range,
+                             mod_id              : mod_id, mod_name: mod_name, mod_version: mod_version,
+                             mod_license         : mod_license, mod_authors: mod_authors, mod_description: mod_description,]
+
+    inputs.properties replaceProperties
+
+    def taskNames = gradle.startParameter.taskNames.collect { name -> name.toString().toLowerCase() }
+    def isDevRun = taskNames.any { name -> name.contains('run') || name == 'test' }
+
+    if (isDevRun) {
+        filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+            expand replaceProperties + [project: project] + [SIDE: 'BOTH']
+        }
+    } else {
+        filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+            expand replaceProperties + [project: project] + [SIDE: '${SIDE}']
+        }
+    }
+}
+
+jar.enabled = false
+shadowJar.enabled = false
+
+afterEvaluate {
+    tasks.named('reobfJar') {
+        enabled = false
+    }
+
+    tasks.named('build') {
+        dependsOn tasks.named('compoundJar')
+        dependsOn tasks.named('clientJar')
+        dependsOn tasks.named('serverJar')
+    }
+}
+
+tasks.register('clientJar', ShadowJar) {
+    archiveClassifier.set('client')
+    from sourceSets.client.output
+    from sourceSets.main.output
+    configurations = [project.configurations.clientSide]
+
+    exclude '**/server.refmap.json'
+
+    manifest {
+        attributes([
+                "MixinConfigs": "client.mixins.json,shared.mixins.json"
+        ])
+    }
+
+    filesMatching('META-INF/mods.toml') {
+        expand project.properties + [
+                SIDE: 'CLIENT',
+        ]
+    }
+}
+
+tasks.register('serverJar', ShadowJar) {
+    archiveClassifier.set('server')
+    from sourceSets.server.output
+    from sourceSets.main.output
+    configurations = [project.configurations.serverSide]
+
+    exclude '**/client.refmap.json'
+
+    manifest {
+        attributes([
+                "MixinConfigs": "server.mixins.json,shared.mixins.json"
+        ])
+    }
+
+    filesMatching('META-INF/mods.toml') {
+        expand project.properties + [
+                SIDE: 'SERVER',
+        ]
+    }
+}
+
+tasks.register('compoundJar', ShadowJar) {
+    archiveClassifier.set('compound')
+    from sourceSets.server.output
+    from sourceSets.client.output
+    from sourceSets.main.output
+    configurations = [project.configurations.serverSide, project.configurations.clientSide]
+
+    manifest {
+        attributes([
+                "MixinConfigs": "server.mixins.json,client.mixins.json,shared.mixins.json"
+        ])
+    }
+
+    filesMatching('META-INF/mods.toml') {
+        expand project.properties + [
+                SIDE: 'BOTH',
+        ]
+    }
+}
+
+reobf {
+    clientJar {}
+    serverJar {}
+    compoundJar {}
+}
